@@ -243,6 +243,7 @@ struct zone_reclaim_stat {
 struct lruvec {
 	struct list_head lists[NR_LRU_LISTS];
 	struct zone_reclaim_stat reclaim_stat;
+	atomic_long_t inactive_age;
 #ifdef CONFIG_MEMCG
 	struct pglist_data *pgdat;
 #endif
@@ -518,7 +519,6 @@ struct zone {
 
 
 	/* Evictions & activations on the inactive file list */
-	atomic_long_t		inactive_age;
 
 	/*
 	 * When free pages are below this point, additional steps are taken
@@ -807,6 +807,8 @@ enum memmap_context {
 };
 extern int init_currently_empty_zone(struct zone *zone, unsigned long start_pfn,
 				     unsigned long size);
+
+extern unsigned long lruvec_lru_size(struct lruvec *, enum lru_list);
 
 extern void lruvec_init(struct lruvec *lruvec);
 

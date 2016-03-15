@@ -356,6 +356,16 @@ static inline bool mem_cgroup_disabled(void)
 	return !cgroup_subsys_enabled(memory_cgrp_subsys);
 }
 
+#define MEM_CGROUP_ID_SHIFT 16
+#define MEM_CGROUP_ID_MAX USHRT_MAX
+
+static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
+{
+	return mem_cgroup_disabled() ? 0 : memcg->id.id;
+}
+
+struct mem_cgroup *mem_cgroup_from_id(unsigned short id);
+
 /*
  * For memory reclaim.
  */
@@ -586,6 +596,20 @@ static inline void mem_cgroup_iter_break(struct mem_cgroup *root,
 static inline bool mem_cgroup_disabled(void)
 {
 	return true;
+}
+
+#define MEM_CGROUP_ID_SHIFT 0
+#define MEM_CGROUP_ID_MAX 0
+
+static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
+{
+	return 0;
+}
+
+static inline struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
+{
+	WARN_ON_ONCE(id);
+	return NULL;
 }
 
 static inline bool

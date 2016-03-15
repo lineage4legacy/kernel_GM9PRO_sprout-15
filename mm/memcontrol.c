@@ -264,12 +264,6 @@ static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
  * We restrict the id in the range of [1, 65535], so it can fit into
  * an unsigned short.
  */
-#define MEM_CGROUP_ID_MAX	USHRT_MAX
-
-static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
-{
-	return memcg->id.id;
-}
 
 /* Writing them here to avoid exposing memcg's inner layout */
 #if defined(CONFIG_INET) && defined(CONFIG_MEMCG_KMEM)
