@@ -1187,7 +1187,7 @@ void do_page_add_anon_rmap(struct page *page,
 		if (PageTransHuge(page))
 			__inc_zone_page_state(page,
 					      NR_ANON_TRANSPARENT_HUGEPAGES);
-		__mod_zone_page_state(page_zone(page), NR_ANON_PAGES,
+		__mod_node_page_state(page_pgdat(page), NR_ANON_PAGES,
 				hpage_nr_pages(page));
 	}
 	if (unlikely(PageKsm(page)))
@@ -1219,7 +1219,7 @@ void page_add_new_anon_rmap(struct page *page,
 	atomic_set(&page->_mapcount, 0); /* increment count (starts at -1) */
 	if (PageTransHuge(page))
 		__inc_zone_page_state(page, NR_ANON_TRANSPARENT_HUGEPAGES);
-	__mod_zone_page_state(page_zone(page), NR_ANON_PAGES,
+	__mod_node_page_state(page_pgdat(page), NR_ANON_PAGES,
 			hpage_nr_pages(page));
 	__page_set_anon_rmap(page, vma, address, 1);
 }
@@ -1236,7 +1236,7 @@ void page_add_file_rmap(struct page *page)
 
 	memcg = mem_cgroup_begin_page_stat(page);
 	if (atomic_inc_and_test(&page->_mapcount)) {
-		__inc_zone_page_state(page, NR_FILE_MAPPED);
+		__inc_node_page_state(page, NR_FILE_MAPPED);
 		mem_cgroup_inc_page_stat(memcg, MEM_CGROUP_STAT_FILE_MAPPED);
 	}
 	mem_cgroup_end_page_stat(memcg);
@@ -1261,7 +1261,7 @@ static void page_remove_file_rmap(struct page *page)
 	 * these counters are not modified in interrupt context, and
 	 * pte lock(a spinlock) is held, which implies preemption disabled.
 	 */
-	__dec_zone_page_state(page, NR_FILE_MAPPED);
+	__dec_node_page_state(page, NR_FILE_MAPPED);
 	mem_cgroup_dec_page_stat(memcg, MEM_CGROUP_STAT_FILE_MAPPED);
 
 	if (unlikely(PageMlocked(page)))
@@ -1299,7 +1299,7 @@ void page_remove_rmap(struct page *page)
 	if (PageTransHuge(page))
 		__dec_zone_page_state(page, NR_ANON_TRANSPARENT_HUGEPAGES);
 
-	__mod_zone_page_state(page_zone(page), NR_ANON_PAGES,
+	__mod_node_page_state(page_pgdat(page), NR_ANON_PAGES,
 			      -hpage_nr_pages(page));
 
 	if (unlikely(PageMlocked(page)))
