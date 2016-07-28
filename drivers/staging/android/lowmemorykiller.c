@@ -292,8 +292,8 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 		return 0;
 
 	if (pressure >= 95) {
-		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
-			global_page_state(NR_SHMEM) -
+		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
+			global_node_page_state(NR_SHMEM) -
 			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
@@ -306,8 +306,8 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 		if (lowmem_minfree_size < array_size)
 			array_size = lowmem_minfree_size;
 
-		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
-			global_page_state(NR_SHMEM) -
+		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
+			global_node_page_state(NR_SHMEM) -
 			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 
@@ -319,8 +319,8 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 			trace_almk_vmpressure(pressure, other_free, other_file);
 		}
 	} else if (atomic_read(&shift_adj)) {
-		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
-			global_page_state(NR_SHMEM) -
+		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
+			global_node_page_state(NR_SHMEM) -
 			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
@@ -423,9 +423,8 @@ void tune_lmk_zone_param(struct zonelist *zonelist, int classzone_idx,
 				*other_free -= zone_page_state(zone,
 							       NR_FREE_PAGES);
 			if (other_file != NULL)
-				*other_file -= zone_page_state(zone,
-							       NR_FILE_PAGES)
-					- zone_page_state(zone, NR_SHMEM)
+				*other_file -= node_page_state((zone)->zone_pgdat, NR_FILE_PAGES)
+					- node_page_state((zone)->zone_pgdat, NR_SHMEM)
 					- zone_page_state(zone, NR_SWAPCACHE);
 		} else if (zone_idx < classzone_idx) {
 			if (zone_watermark_ok(zone, 0, 0, classzone_idx, 0) &&
@@ -566,10 +565,10 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 
 	other_free = global_page_state(NR_FREE_PAGES);
 
-	if (global_page_state(NR_SHMEM) + total_swapcache_pages() <
-		global_page_state(NR_FILE_PAGES) + zcache_pages())
-		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
-						global_page_state(NR_SHMEM) -
+	if (global_node_page_state(NR_SHMEM) + total_swapcache_pages() <
+		global_node_page_state(NR_FILE_PAGES) + zcache_pages())
+		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
+						global_node_page_state(NR_SHMEM) -
 						global_page_state(NR_UNEVICTABLE) -
 						total_swapcache_pages();
 	else
@@ -701,7 +700,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			     totalreserve_pages * (long)(PAGE_SIZE / 1024),
 			     global_page_state(NR_FREE_PAGES) *
 				(long)(PAGE_SIZE / 1024),
-			     global_page_state(NR_FILE_PAGES) *
+			     global_node_page_state(NR_FILE_PAGES) *
 				(long)(PAGE_SIZE / 1024),
 			     (long)zcache_pages() * (long)(PAGE_SIZE / 1024),
 			     sc->gfp_mask);
