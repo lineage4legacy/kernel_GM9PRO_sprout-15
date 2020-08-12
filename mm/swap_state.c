@@ -77,10 +77,13 @@ void show_swap_cache_info(void)
  * __add_to_swap_cache resembles add_to_page_cache_locked on swapper_space,
  * but sets SwapCache flag and private instead of mapping and index.
  */
-int __add_to_swap_cache(struct page *page, swp_entry_t entry)
+int __add_to_swap_cache(struct page *page, swp_entry_t entry, void **shadowp)
 {
 	int error;
 	struct address_space *address_space;
+	void *item;
+	void __rcu **slot;
+	struct radix_tree_node *node;
 
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 	VM_BUG_ON_PAGE(PageSwapCache(page), page);
@@ -92,8 +95,19 @@ int __add_to_swap_cache(struct page *page, swp_entry_t entry)
 
 	address_space = swap_address_space(entry);
 	spin_lock_irq(&address_space->tree_lock);
-	error = radix_tree_insert(&address_space->page_tree,
-					entry.val, page);
+	error = __radix_tree_create(&address_space->page_tree,
+				    entry.val, &node, &slot);
+	if (unlikely(error))
+		goto unlock;
+	item = radix_tree_deref_slot_protected(slot, &address_space->tree_lock);
+	if (WARN_ON_ONCE(item && !radix_tree_exceptional_entry(item))) {
+		error = -EEXIST;
+		goto unlock;
+	}
+	radix_tree_replace_slot(slot, page);
+	if (shadowp)
+		*shadowp = item;
+unlock:
 	if (likely(!error)) {
 		address_space->nrpages++;
 		__inc_node_page_state(page, NR_FILE_PAGES);
@@ -124,7 +138,7 @@ int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
 
 	error = radix_tree_maybe_preload(gfp_mask);
 	if (!error) {
-		error = __add_to_swap_cache(page, entry);
+		error = __add_to_swap_cache(page, entry, NULL);
 		radix_tree_preload_end();
 	}
 	return error;
@@ -134,7 +148,7 @@ int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
  * This must be called only on pages that have
  * been verified to be in the swap cache.
  */
-void __delete_from_swap_cache(struct page *page)
+void __delete_from_swap_cache(struct page *page, void *shadow)
 {
 	swp_entry_t entry;
 	struct address_space *address_space;
@@ -145,7 +159,15 @@ void __delete_from_swap_cache(struct page *page)
 
 	entry.val = page_private(page);
 	address_space = swap_address_space(entry);
-	radix_tree_delete(&address_space->page_tree, page_private(page));
+	VM_BUG_ON(shadow && !radix_tree_exceptional_entry(shadow));
+	if (shadow) {
+		void **slot = radix_tree_lookup_slot(&address_space->page_tree, entry.val);
+		VM_BUG_ON(!slot || radix_tree_deref_slot_protected(slot,
+					&address_space->tree_lock) != page);
+		radix_tree_replace_slot(slot, shadow);
+	} else {
+		radix_tree_delete(&address_space->page_tree, entry.val);
+	}
 	set_page_private(page, 0);
 	ClearPageSwapCache(page);
 	address_space->nrpages--;
@@ -221,7 +243,7 @@ void delete_from_swap_cache(struct page *page)
 
 	address_space = swap_address_space(entry);
 	spin_lock_irq(&address_space->tree_lock);
-	__delete_from_swap_cache(page);
+	__delete_from_swap_cache(page, NULL);
 	spin_unlock_irq(&address_space->tree_lock);
 
 	swapcache_free(entry);
@@ -358,7 +380,7 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		/* May fail (-ENOMEM) if radix-tree node allocation failed. */
 		__SetPageLocked(new_page);
 		SetPageSwapBacked(new_page);
-		err = __add_to_swap_cache(new_page, entry);
+		err = __add_to_swap_cache(new_page, entry, NULL);
 		if (likely(!err)) {
 			radix_tree_preload_end();
 			/*
@@ -501,4 +523,20 @@ struct page *swapin_readahead(swp_entry_t entry, gfp_t gfp_mask,
 	lru_add_drain();	/* Push any new pages onto the LRU now */
 skip:
 	return read_swap_cache_async(entry, gfp_mask, vma, addr);
+}
+
+void clear_shadow_from_swap_cache(int type, unsigned long begin, unsigned long end)
+{
+	struct address_space *mapping = &swapper_spaces[type];
+	unsigned long flags, offset;
+
+	spin_lock_irqsave(&mapping->tree_lock, flags);
+	for (offset = begin; offset <= end; offset++) {
+		swp_entry_t entry = swp_entry(type, offset);
+		void *item = radix_tree_lookup(&mapping->page_tree, entry.val);
+
+		if (radix_tree_exceptional_entry(item))
+			radix_tree_delete(&mapping->page_tree, entry.val);
+	}
+	spin_unlock_irqrestore(&mapping->tree_lock, flags);
 }
