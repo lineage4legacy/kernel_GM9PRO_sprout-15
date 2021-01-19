@@ -8300,7 +8300,8 @@ again:
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
 
-	rq->misfit_task = !task_fits_max(p, rq->cpu);
+	rq->misfit_task = p->nr_cpus_allowed > 1 &&
+		!task_fits_max(p, rq->cpu);
 
 	return p;
 simple:
@@ -8323,7 +8324,8 @@ simple:
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
 
-	rq->misfit_task = !task_fits_max(p, rq->cpu);
+	rq->misfit_task = p->nr_cpus_allowed > 1 &&
+		!task_fits_max(p, rq->cpu);
 
 	return p;
 
@@ -11770,7 +11772,8 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 		trace_sched_overutilized(true);
 	}
 
-	rq->misfit_task = !task_fits_max(curr, rq->cpu);
+	rq->misfit_task = curr->nr_cpus_allowed > 1 &&
+		!task_fits_max(curr, rq->cpu);
 #endif
 
 }
