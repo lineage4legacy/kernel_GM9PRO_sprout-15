@@ -1115,7 +1115,9 @@ void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 	mz = container_of(lruvec, struct mem_cgroup_per_node, lruvec);
 	lru_size = mz->lru_size + lru;
 	*lru_size += nr_pages;
+#ifndef CONFIG_LRU_GEN
 	VM_BUG_ON((long)(*lru_size) < 0);
+#endif
 }
 
 bool task_in_mem_cgroup(struct task_struct *task, struct mem_cgroup *memcg)
@@ -4326,6 +4328,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	INIT_LIST_HEAD(&memcg->cgwb_list);
 #endif
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
+	lru_gen_init_memcg(memcg);
 	return &memcg->css;
 
 free_out:
