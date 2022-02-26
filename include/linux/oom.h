@@ -70,6 +70,18 @@ static inline bool oom_task_origin(const struct task_struct *p)
 	return !!(p->signal->oom_flags & OOM_FLAG_ORIGIN);
 }
 
+static inline bool mm_is_oom_victim(struct mm_struct *mm)
+{
+ struct task_struct *owner;
+ bool victim = false;
+ rcu_read_lock();
+ owner = rcu_dereference(mm->owner);
+ if (owner)
+  victim = test_tsk_thread_flag(owner, TIF_MEMDIE);
+ rcu_read_unlock();
+ return victim;
+}
+
 extern void mark_oom_victim(struct task_struct *tsk);
 
 extern unsigned long oom_badness(struct task_struct *p,
