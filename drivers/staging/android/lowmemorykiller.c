@@ -1,3 +1,4 @@
+#define LMK_ZONE_BALANCE_GAP_RATIO 10
 /* drivers/misc/lowmemorykiller.c
  *
  * The lowmemorykiller driver lets user-space specify a set of memory thresholds
@@ -294,7 +295,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 	if (pressure >= 95) {
 		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_node_page_state(NR_SHMEM) -
-			global_page_state(NR_UNEVICTABLE) -
+			global_node_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
 
@@ -308,7 +309,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 
 		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_node_page_state(NR_SHMEM) -
-			global_page_state(NR_UNEVICTABLE) -
+			global_node_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 
 		other_free = global_page_state(NR_FREE_PAGES);
@@ -321,7 +322,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 	} else if (atomic_read(&shift_adj)) {
 		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_node_page_state(NR_SHMEM) -
-			global_page_state(NR_UNEVICTABLE) -
+			global_node_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
 
@@ -498,8 +499,8 @@ void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 
 	balance_gap = min(low_wmark_pages(preferred_zone),
 			  (preferred_zone->present_pages +
-			   KSWAPD_ZONE_BALANCE_GAP_RATIO-1) /
-			   KSWAPD_ZONE_BALANCE_GAP_RATIO);
+			   LMK_ZONE_BALANCE_GAP_RATIO-1) /
+			   LMK_ZONE_BALANCE_GAP_RATIO);
 
 	if (likely(current_is_kswapd() && zone_watermark_ok(preferred_zone, 0,
 			  high_wmark_pages(preferred_zone) + SWAP_CLUSTER_MAX +
@@ -569,7 +570,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		global_node_page_state(NR_FILE_PAGES) + zcache_pages())
 		other_file = global_node_page_state(NR_FILE_PAGES) + zcache_pages() -
 						global_node_page_state(NR_SHMEM) -
-						global_page_state(NR_UNEVICTABLE) -
+						global_node_page_state(NR_UNEVICTABLE) -
 						total_swapcache_pages();
 	else
 		other_file = 0;

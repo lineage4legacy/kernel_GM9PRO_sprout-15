@@ -984,6 +984,7 @@ const char * const vmstat_text[] = {
 	"workingset_refault",
 	"workingset_activate",
 	"workingset_nodereclaim",
+	"workingset_restore",
 	"nr_anon_pages",
 	"nr_mapped",
 	"nr_file_pages",

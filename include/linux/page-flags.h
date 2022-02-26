@@ -75,6 +75,7 @@ enum pageflags {
 	PG_locked,		/* Page is locked. Don't touch. */
 	PG_error,
 	PG_referenced,
+	PG_workingset,
 	PG_uptodate,
 	PG_dirty,
 	PG_lru,
@@ -264,6 +265,7 @@ static inline int __TestClearPage##uname(struct page *page) { return 0; }
 
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 PAGEFLAG(Error, error, PF_ANY) TESTCLEARFLAG(Error, error, PF_ANY)
+PAGEFLAG(Workingset, workingset, PF_ANY)
 PAGEFLAG(Referenced, referenced, PF_ANY) TESTCLEARFLAG(Referenced, referenced, PF_ANY)
 	__SETPAGEFLAG(Referenced, referenced, PF_ANY)
 PAGEFLAG(Dirty, dirty, PF_ANY) TESTSCFLAG(Dirty, dirty, PF_ANY)

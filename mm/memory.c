@@ -2526,6 +2526,7 @@ static void lru_gen_exit_fault(void)
 {
 	current->in_lru_fault = false;
 }
+
 #else
 static void lru_gen_enter_fault(struct vm_area_struct *vma)
 {
@@ -2534,6 +2535,7 @@ static void lru_gen_enter_fault(struct vm_area_struct *vma)
 static void lru_gen_exit_fault(void)
 {
 }
+
 #endif /* CONFIG_LRU_GEN */
 
 /*
