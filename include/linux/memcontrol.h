@@ -356,6 +356,30 @@ static inline bool mem_cgroup_disabled(void)
 	return !cgroup_subsys_enabled(memory_cgrp_subsys);
 }
 
+static inline struct mem_cgroup *page_memcg(struct page *page)
+{
+ return READ_ONCE(page->mem_cgroup);
+}
+
+static inline struct mem_cgroup *page_memcg_rcu(struct page *page)
+{
+ return page_memcg(page);
+}
+
+static inline bool mem_cgroup_trylock_pages(struct mem_cgroup *memcg)
+{
+ rcu_read_lock();
+ if (mem_cgroup_disabled() || !atomic_read(&memcg->moving_account))
+  return true;
+ rcu_read_unlock();
+ return false;
+}
+
+static inline void mem_cgroup_unlock_pages(void)
+{
+ rcu_read_unlock();
+}
+
 #define MEM_CGROUP_ID_SHIFT 16
 #define MEM_CGROUP_ID_MAX USHRT_MAX
 
@@ -598,6 +622,9 @@ static inline bool mem_cgroup_disabled(void)
 	return true;
 }
 
+static inline struct mem_cgroup *page_memcg(struct page *page) { return NULL; }
+static inline struct mem_cgroup *page_memcg_rcu(struct page *page) { return NULL; }
+
 #define MEM_CGROUP_ID_SHIFT 0
 #define MEM_CGROUP_ID_MAX 0
 
@@ -647,6 +674,18 @@ static inline struct mem_cgroup *mem_cgroup_begin_page_stat(struct page *page)
 
 static inline void mem_cgroup_end_page_stat(struct mem_cgroup *memcg)
 {
+}
+
+static inline bool mem_cgroup_trylock_pages(struct mem_cgroup *memcg)
+{
+	/* to match page_memcg_rcu() */
+	rcu_read_lock();
+	return true;
+}
+
+static inline void mem_cgroup_unlock_pages(void)
+{
+	rcu_read_unlock();
 }
 
 static inline void mem_cgroup_handle_over_high(void)

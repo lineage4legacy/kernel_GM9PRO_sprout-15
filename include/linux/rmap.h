@@ -10,6 +10,15 @@
 #include <linux/rwsem.h>
 #include <linux/memcontrol.h>
 
+/* Locked mapping used for adjacent-PTE aging. */
+struct page_vma_mapped_walk {
+ struct page *page;
+ struct vm_area_struct *vma;
+ unsigned long address;
+ pte_t *pte;
+ spinlock_t *ptl;
+};
+
 extern int isolate_lru_page(struct page *page);
 extern void putback_lru_page(struct page *page);
 extern unsigned long reclaim_pages_from_list(struct list_head *page_list,

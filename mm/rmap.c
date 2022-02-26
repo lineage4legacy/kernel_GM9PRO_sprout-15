@@ -52,6 +52,7 @@
 #include <linux/init.h>
 #include <linux/ksm.h>
 #include <linux/rmap.h>
+#include <linux/mm_inline.h>
 #include <linux/rcupdate.h>
 #include <linux/export.h>
 #include <linux/memcontrol.h>
@@ -897,6 +898,16 @@ static int page_referenced_one(struct page *page, struct vm_area_struct *vma,
 			pra->vm_flags |= VM_LOCKED;
 			return SWAP_FAIL; /* To break the loop */
 		}
+
+  if (lru_gen_enabled() && pte_young(*pte) &&
+      !(vma->vm_flags & (VM_SEQ_READ | VM_RAND_READ))) {
+   struct page_vma_mapped_walk pvmw = {
+    .page = page, .vma = vma, .address = address,
+    .pte = pte, .ptl = ptl,
+   };
+   lru_gen_look_around(&pvmw);
+   referenced++;
+  }
 
 		if (ptep_clear_flush_young_notify(vma, address, pte)) {
 			/*
