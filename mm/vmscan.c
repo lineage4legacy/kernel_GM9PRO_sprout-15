@@ -2458,7 +2458,7 @@ static int get_swappiness(struct lruvec *lruvec, struct scan_control *sc)
 {
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
 
-	if (!sc->may_swap || get_nr_swap_pages() < MIN_LRU_BATCH) {
+	if (!sc->may_swap || get_nr_swap_pages() <= 0) {
 		count_vm_event(current_is_kswapd() ? LRU_KSWAPD_SWAP_FULL :
 		               LRU_DIRECT_SWAP_FULL);
 		return 0;
