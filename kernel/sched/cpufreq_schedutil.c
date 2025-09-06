@@ -92,9 +92,11 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 {
 	s64 delta_ns;
 
-	if (unlikely(sg_policy->limits_changed)) {
-		sg_policy->limits_changed = false;
+	if (unlikely(READ_ONCE(sg_policy->limits_changed))) {
+		WRITE_ONCE(sg_policy->limits_changed, false);
 		sg_policy->need_freq_update = true;
+		/* Pair with sugov_limits() before reading the new policy limits. */
+		smp_mb();
 		return true;
 	}
 
@@ -912,7 +914,9 @@ static int sugov_limits(struct cpufreq_policy *policy)
 		mutex_unlock(&sg_policy->work_lock);
 	}
 
-	sg_policy->limits_changed = true;
+	/* Pair with sugov_should_update_freq() after policy limit changes. */
+	smp_wmb();
+	WRITE_ONCE(sg_policy->limits_changed, true);
 
 	return 0;
 }
