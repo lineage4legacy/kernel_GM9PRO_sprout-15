@@ -631,4 +631,6 @@ static inline void kgsl_gpu_sysfs_add_link(struct kobject *dst,
 
 	kernfs_create_link(dst->sd, dst_name, old);
 }
+unsigned long kgsl_get_align(struct kgsl_memdesc *memdesc);
+
 #endif /* __KGSL_H */
