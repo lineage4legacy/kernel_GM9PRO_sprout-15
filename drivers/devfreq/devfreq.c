@@ -205,6 +205,12 @@ int update_devfreq(struct devfreq *devfreq)
 			return err;
 	}
 
+	/* Input boost is independent of the userspace minimum. */
+	if (freq < devfreq->boost_min_freq) {
+		freq = devfreq->boost_min_freq;
+		flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND;
+	}
+
 	/*
 	 * Adjust the frequency with user freq and QoS.
 	 *
@@ -935,10 +941,6 @@ static ssize_t min_freq_store(struct device *dev, struct device_attribute *attr,
 	unsigned long value;
 	int ret;
 	unsigned long max;
-
-	/* Minfreq is managed by devfreq_boost */
-	if (df->is_boost_device)
-		return count;
 
 	ret = sscanf(buf, "%lu", &value);
 	if (ret != 1)
