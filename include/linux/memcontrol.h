@@ -361,11 +361,6 @@ static inline bool mem_cgroup_disabled(void)
 	return !cgroup_subsys_enabled(memory_cgrp_subsys);
 }
 
-static inline struct mem_cgroup *page_memcg(struct page *page)
-{
- return READ_ONCE(page->mem_cgroup);
-}
-
 static inline struct mem_cgroup *page_memcg_rcu(struct page *page)
 {
  return page_memcg(page);
@@ -634,7 +629,6 @@ static inline bool mem_cgroup_disabled(void)
 	return true;
 }
 
-static inline struct mem_cgroup *page_memcg(struct page *page) { return NULL; }
 static inline struct mem_cgroup *page_memcg_rcu(struct page *page) { return NULL; }
 
 static inline struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm)
