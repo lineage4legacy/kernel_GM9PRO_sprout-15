@@ -1960,6 +1960,12 @@ long _do_fork(unsigned long clone_flags,
 			get_task_struct(p);
 		}
 
+		if (!(clone_flags & CLONE_VM) && p->mm) {
+			task_lock(p);
+			lru_gen_add_mm(p->mm);
+			task_unlock(p);
+		}
+
 		wake_up_new_task(p);
 
 		/* forking complete and child started to run, tell ptracer */
@@ -1974,13 +1980,6 @@ long _do_fork(unsigned long clone_flags,
 		put_pid(pid);
 	} else {
 		nr = PTR_ERR(p);
-	}
-
-	if (IS_ENABLED(CONFIG_LRU_GEN) && !(clone_flags & CLONE_VM)) {
-		/* lock the task to synchronize with memcg migration */
-		task_lock(p);
-		lru_gen_add_mm(p->mm);
-		task_unlock(p);
 	}
 
 #ifdef CONFIG_PERF_HUMANTASK
