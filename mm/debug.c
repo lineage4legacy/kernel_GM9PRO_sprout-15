@@ -26,6 +26,7 @@ static const struct trace_print_flags pageflag_names[] = {
 	{1UL << PG_locked,		"locked"	},
 	{1UL << PG_error,		"error"		},
 	{1UL << PG_referenced,		"referenced"	},
+	{1UL << PG_workingset,		"workingset"	},
 	{1UL << PG_uptodate,		"uptodate"	},
 	{1UL << PG_dirty,		"dirty"		},
 	{1UL << PG_lru,			"lru"		},
