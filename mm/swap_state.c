@@ -105,6 +105,8 @@ int __add_to_swap_cache(struct page *page, swp_entry_t entry, void **shadowp)
 		error = -EEXIST;
 		goto unlock;
 	}
+	if (!item && node)
+		node->count++;
 	radix_tree_replace_slot(slot, page);
 	if (shadowp)
 		*shadowp = item;
