@@ -16,6 +16,7 @@ struct page_vma_mapped_walk {
  struct vm_area_struct *vma;
  unsigned long address;
  pte_t *pte;
+ pmd_t *pmd;
  spinlock_t *ptl;
 };
 

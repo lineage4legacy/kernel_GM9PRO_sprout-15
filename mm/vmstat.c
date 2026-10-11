@@ -1027,6 +1027,7 @@ const char * const vmstat_text[] = {
 	"pgscan_kswapd",
 	"pgscan_direct",
 	"pgscan_direct_throttle",
+	"pgscan_skip",
 	"lru_kswapd_no_progress",
 	"lru_kswapd_anon",
 	"lru_kswapd_file",

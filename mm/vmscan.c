@@ -46,6 +46,10 @@
 #include <linux/oom.h>
 #include <linux/prefetch.h>
 #include <linux/printk.h>
+#include <linux/ctype.h>
+#include <linux/debugfs.h>
+#include <linux/pagevec.h>
+#include <linux/hugetlb.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -2469,7 +2473,7 @@ static int get_swappiness(struct lruvec *lruvec, struct scan_control *sc)
 	}
 
 #ifdef CONFIG_MEMCG_SWAP
-	if (!mem_cgroup_disabled() && do_swap_account && memcg != root_mem_cgroup &&
+	if (!mem_cgroup_disabled() && do_swap_account && memcg && memcg->css.parent &&
 	    page_counter_read(&memcg->memsw) >= memcg->memsw.limit)
 		return 0;
 #endif
@@ -4058,7 +4062,7 @@ static int scan_pages(struct lruvec *lruvec, struct scan_control *sc,
 
 		if (skipped) {
 			list_splice(&moved, head);
-			__count_zid_vm_events(PGSCAN_SKIP, zone, skipped);
+			__count_vm_events(PGSCAN_SKIP, skipped);
 		}
 
 		if (!remaining || isolated >= MIN_LRU_BATCH)
@@ -4689,7 +4693,7 @@ static void lru_gen_seq_show_full(struct seq_file *m, struct lruvec *lruvec,
 static int lru_gen_seq_show(struct seq_file *m, void *v)
 {
 	unsigned long seq;
-	bool full = !debugfs_real_fops(m->file)->write;
+	bool full = !m->file->f_op->write;
 	struct lruvec *lruvec = v;
 	struct lru_gen_struct *lrugen = &lruvec->lrugen;
 	int nid = lruvec_pgdat(lruvec)->node_id;

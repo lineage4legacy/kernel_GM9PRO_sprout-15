@@ -904,6 +904,7 @@ static int page_referenced_one(struct page *page, struct vm_area_struct *vma,
    struct page_vma_mapped_walk pvmw = {
     .page = page, .vma = vma, .address = address,
     .pte = pte, .ptl = ptl,
+    .pmd = pmd_offset(pud_offset(pgd_offset(mm, address), address), address),
    };
    lru_gen_look_around(&pvmw);
    referenced++;
