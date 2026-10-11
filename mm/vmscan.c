@@ -3698,7 +3698,7 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 	long nr_to_scan;
 	int swappiness = get_swappiness(lruvec, sc);
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
-	enum mem_cgroup_protection prot = mem_cgroup_protected(NULL, memcg);
+	bool low = mem_cgroup_low(NULL, memcg);
 	DEFINE_MAX_SEQ(lruvec);
 	DEFINE_MIN_SEQ(lruvec);
 
@@ -3710,8 +3710,6 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 			return false;
 	}
 
-	if (prot == MEMCG_PROT_MIN)
-		return false;
 
 	nr_to_scan = get_nr_evictable(lruvec, max_seq, min_seq, swappiness, &need_aging);
 	if (!nr_to_scan)
@@ -3719,10 +3717,10 @@ static bool age_lruvec(struct lruvec *lruvec, struct scan_control *sc,
 
 	nr_to_scan >>= sc->priority;
 
-	if (!mem_cgroup_online(memcg))
+	if (!mem_cgroup_lruvec_online(lruvec))
 		nr_to_scan++;
 
-	if (nr_to_scan && need_aging && (prot != MEMCG_PROT_LOW || sc->memcg_low_reclaim))
+	if (nr_to_scan && need_aging && (!low || sc->may_thrash))
 		try_to_inc_max_seq(lruvec, max_seq, sc, swappiness, false);
 
 	return true;
@@ -4267,7 +4265,7 @@ static long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *sc, bool 
 		return 0;
 
 
-	if (!mem_cgroup_online(memcg))
+	if (!mem_cgroup_lruvec_online(lruvec))
 		priority = 0;
 	else if (sc->nr_reclaimed - reclaimed >= sc->nr_to_reclaim)
 		priority = DEF_PRIORITY;
