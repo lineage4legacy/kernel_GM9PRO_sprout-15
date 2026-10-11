@@ -4449,7 +4449,6 @@ static void lru_gen_change_state(bool enable)
 	struct mem_cgroup *memcg;
 
 	cgroup_lock();
-	cpus_read_lock();
 	get_online_mems();
 	mutex_lock(&state_mutex);
 
@@ -4457,9 +4456,9 @@ static void lru_gen_change_state(bool enable)
 		goto unlock;
 
 	if (enable)
-		static_branch_enable_cpuslocked(&lru_gen_caps[LRU_GEN_CORE]);
+		static_branch_enable(&lru_gen_caps[LRU_GEN_CORE]);
 	else
-		static_branch_disable_cpuslocked(&lru_gen_caps[LRU_GEN_CORE]);
+		static_branch_disable(&lru_gen_caps[LRU_GEN_CORE]);
 
 	memcg = mem_cgroup_iter(NULL, NULL, NULL);
 	do {
@@ -4498,7 +4497,6 @@ static void lru_gen_change_state(bool enable)
 unlock:
 	mutex_unlock(&state_mutex);
 	put_online_mems();
-	cpus_read_unlock();
 	cgroup_unlock();
 }
 
