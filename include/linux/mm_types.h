@@ -1,8 +1,6 @@
 #ifndef _LINUX_MM_TYPES_H
 #define _LINUX_MM_TYPES_H
 
-#include <linux/mm_types_task.h>
-#include <linux/sched.h>
 
 #include <linux/auxvec.h>
 #include <linux/types.h>
