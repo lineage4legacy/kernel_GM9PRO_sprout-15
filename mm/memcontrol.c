@@ -4267,6 +4267,8 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
 
+	lru_gen_exit_memcg(memcg);
+
 	mem_cgroup_remove_from_trees(memcg);
 
 	for_each_node(node)

@@ -2440,7 +2440,11 @@ static struct lruvec *get_lruvec(struct mem_cgroup *memcg, int nid)
 
 #ifdef CONFIG_MEMCG
 	if (memcg) {
-		struct lruvec *lruvec = &memcg->nodeinfo[nid]->lruvec;
+		struct lruvec *lruvec;
+
+		if (!memcg->nodeinfo[nid])
+			return NULL;
+		lruvec = &memcg->nodeinfo[nid]->lruvec;
 
 		/* for hotadd_new_pgdat() */
 		if (!lruvec->pgdat)
@@ -4966,6 +4970,9 @@ void lru_gen_exit_memcg(struct mem_cgroup *memcg)
 
 	for_each_node(nid) {
 		struct lruvec *lruvec = get_lruvec(memcg, nid);
+
+		if (!lruvec)
+			continue;
 
 		VM_BUG_ON(memchr_inv(lruvec->lrugen.nr_pages, 0,
 				     sizeof(lruvec->lrugen.nr_pages)));
