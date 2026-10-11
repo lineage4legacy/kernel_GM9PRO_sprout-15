@@ -394,6 +394,13 @@ static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 }
 
 struct mem_cgroup *mem_cgroup_from_id(unsigned short id);
+struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
+static inline void mem_cgroup_put(struct mem_cgroup *memcg)
+{
+ if (memcg)
+  css_put(&memcg->css);
+}
+
 
 /*
  * For memory reclaim.
@@ -629,6 +636,12 @@ static inline bool mem_cgroup_disabled(void)
 
 static inline struct mem_cgroup *page_memcg(struct page *page) { return NULL; }
 static inline struct mem_cgroup *page_memcg_rcu(struct page *page) { return NULL; }
+
+static inline struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm)
+{
+ return NULL;
+}
+static inline void mem_cgroup_put(struct mem_cgroup *memcg) {}
 
 #define MEM_CGROUP_ID_SHIFT 0
 #define MEM_CGROUP_ID_MAX 0

@@ -2508,7 +2508,8 @@ static struct lru_gen_mm_list *get_mm_list(struct mem_cgroup *memcg)
 void lru_gen_add_mm(struct mm_struct *mm)
 {
 	int nid;
-	struct mem_cgroup *memcg = get_mem_cgroup_from_mm(mm);
+	struct mem_cgroup *memcg = mem_cgroup_disabled() ? NULL :
+		get_mem_cgroup_from_mm(mm);
 	struct lru_gen_mm_list *mm_list = get_mm_list(memcg);
 
 	VM_BUG_ON_MM(!list_empty(&mm->lru_gen.list), mm);
@@ -2641,7 +2642,7 @@ static void get_item_key(void *item, int *key)
 {
 	u32 hash = hash_ptr(item, BLOOM_FILTER_SHIFT * 2);
 
-	BUILD_BUG_ON(BLOOM_FILTER_SHIFT * 2 > BITS_PER_TYPE(u32));
+	BUILD_BUG_ON(BLOOM_FILTER_SHIFT * 2 > (sizeof(u32) * 8));
 
 	key[0] = hash & (BIT(BLOOM_FILTER_SHIFT) - 1);
 	key[1] = hash >> BLOOM_FILTER_SHIFT;
@@ -4594,7 +4595,7 @@ static void *lru_gen_seq_start(struct seq_file *m, loff_t *pos)
 	struct mem_cgroup *memcg;
 	loff_t nr_to_skip = *pos;
 
-	m->private = kvmalloc(PATH_MAX, GFP_KERNEL);
+	m->private = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!m->private)
 		return ERR_PTR(-ENOMEM);
 
@@ -4852,7 +4853,9 @@ static ssize_t lru_gen_seq_write(struct file *file, const char __user *src,
 		.gfp_mask = GFP_KERNEL,
 	};
 
-	buf = kvmalloc(len + 1, GFP_KERNEL);
+	if (len > PAGE_SIZE)
+		return -E2BIG;
+	buf = kmalloc(len + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4871,7 +4874,8 @@ static ssize_t lru_gen_seq_write(struct file *file, const char __user *src,
 	}
 
 	current->reclaim_state = &rs;
-	flags = memalloc_noreclaim_save();
+	flags = current->flags & PF_MEMALLOC;
+	current->flags |= PF_MEMALLOC;
 
 	while ((cur = strsep(&next, ",;\n"))) {
 		int n;
@@ -4899,7 +4903,7 @@ static ssize_t lru_gen_seq_write(struct file *file, const char __user *src,
 			break;
 	}
 
-	memalloc_noreclaim_restore(flags);
+	current->flags = (current->flags & ~PF_MEMALLOC) | flags;
 	current->reclaim_state = NULL;
 
 	free_mm_walk(rs.mm_walk);
