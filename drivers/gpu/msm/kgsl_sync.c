@@ -382,8 +382,14 @@ struct kgsl_sync_fence_waiter *kgsl_sync_fence_async_wait(int fd,
 	int status;
 
 	fence = sync_fence_fdget(fd);
+	
 	if (fence == NULL)
 		return ERR_PTR(-EINVAL);
+	if (sync_fence_signaled(fence)) {
+		sync_fence_put(fence);
+		return NULL;
+	}
+
 
 	/* create the waiter */
 	kwaiter = kzalloc(sizeof(*kwaiter), GFP_ATOMIC);
