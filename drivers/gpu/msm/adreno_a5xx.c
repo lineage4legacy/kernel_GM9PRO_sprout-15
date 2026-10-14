@@ -150,7 +150,8 @@ static void a530_efuse_speed_bin(struct adreno_device *adreno_dev)
 		"qcom,gpu-speed-bin", speed_bin, 3))
 		return;
 
-	adreno_efuse_read_u32(adreno_dev, speed_bin[0], &val);
+	if (adreno_efuse_read_u32(adreno_dev, speed_bin[0], &val))
+		return;
 
 	adreno_dev->speed_bin = (val & speed_bin[1]) >> speed_bin[2];
 }
