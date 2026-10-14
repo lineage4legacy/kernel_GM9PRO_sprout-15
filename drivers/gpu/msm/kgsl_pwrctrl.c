@@ -40,6 +40,7 @@
 #define TH_HZ			(HZ/5)
 
 #define KGSL_MAX_BUSLEVELS	20
+#define KGSL_MIN_GPU_FREQ	370000000
 
 #define DEFAULT_BUS_P 25
 
@@ -2182,6 +2183,14 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 			freq = clk_round_rate(pwr->grp_clks[0], freq);
 
 		pwr->pwrlevels[i].gpu_freq = freq;
+	}
+
+	/* Keep the GPU above 370 MHz while it is active. */
+	for (i = 0; i < pwr->num_pwrlevels; i++) {
+		if (pwr->pwrlevels[i].gpu_freq >= KGSL_MIN_GPU_FREQ)
+			pwr->min_pwrlevel = i;
+		else
+			break;
 	}
 
 	kgsl_pwrctrl_clk_set_rate(pwr->grp_clks[0],
