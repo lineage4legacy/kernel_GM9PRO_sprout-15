@@ -2067,7 +2067,13 @@ static void _gpu_clk_prepare_enable(struct kgsl_device *device,
 		return;
 err:
 	/* Failure is fatal so BUG() to facilitate debug */
-	KGSL_DRV_FATAL(device, "KGSL:%s enable error:%d\n", name, ret);
+	KGSL_DRV_FATAL(device,
+		"KGSL:%s enable error:%d state:%s requested:%s freq:%lu rate:%lu power:%lx ctrl:%lx\n",
+		name, ret, kgsl_pwrstate_to_str(device->state),
+		kgsl_pwrstate_to_str(device->requested_state),
+		(unsigned long) kgsl_pwrctrl_active_freq(&device->pwrctrl),
+		clk_get_rate(clk), device->pwrctrl.power_flags,
+		device->pwrctrl.ctrl_flags);
 }
 
 /*
