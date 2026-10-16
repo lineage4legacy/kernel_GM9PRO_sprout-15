@@ -19,6 +19,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
+#include <linux/init.h>
 #include <linux/poll.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
@@ -34,6 +35,7 @@
 
 static const struct fence_ops android_fence_ops;
 static const struct file_operations sync_fence_fops;
+static struct kmem_cache *fence_cb_cache;
 
 struct sync_timeline *sync_timeline_create(const struct sync_timeline_ops *ops,
 					   int size, const char *name)
@@ -151,29 +153,28 @@ void sync_pt_free(struct sync_pt *pt)
 }
 EXPORT_SYMBOL(sync_pt_free);
 
-static struct sync_fence *sync_fence_alloc(int size, const char *name)
+static struct sync_fence *sync_fence_alloc(const char *name)
 {
 	struct sync_fence *fence;
 
-	fence = kzalloc(size, GFP_KERNEL);
-	if (fence == NULL)
+	fence = kzalloc(sizeof(*fence), GFP_KERNEL);
+	if (!fence)
 		return NULL;
 
 	fence->file = anon_inode_getfile("sync_fence", &sync_fence_fops,
 					 fence, 0);
-	if (IS_ERR(fence->file))
-		goto err;
+	if (IS_ERR(fence->file)) {
+		kfree(fence);
+		return NULL;
+	}
 
 	kref_init(&fence->kref);
 	strlcpy(fence->name, name, sizeof(fence->name));
-
 	init_waitqueue_head(&fence->wq);
-
+#ifdef CONFIG_DEBUG_FS
+	INIT_LIST_HEAD(&fence->sync_fence_list);
+#endif
 	return fence;
-
-err:
-	kfree(fence);
-	return NULL;
 }
 
 static void fence_check_cb_func(struct fence *f, struct fence_cb *cb)
@@ -192,22 +193,26 @@ static void fence_check_cb_func(struct fence *f, struct fence_cb *cb)
 struct sync_fence *sync_fence_create(const char *name, struct sync_pt *pt)
 {
 	struct sync_fence *fence;
+	struct sync_fence_cb *cb;
 
-	fence = sync_fence_alloc(offsetof(struct sync_fence, cbs[1]), name);
-	if (fence == NULL)
+	cb = kmem_cache_zalloc(fence_cb_cache, GFP_KERNEL);
+	if (!cb)
 		return NULL;
+	fence = sync_fence_alloc(name);
+	if (!fence) {
+		kmem_cache_free(fence_cb_cache, cb);
+		return NULL;
+	}
 
+	fence->cbs = cb;
 	fence->num_fences = 1;
 	atomic_set(&fence->status, 1);
-
-	fence->cbs[0].sync_pt = &pt->base;
-	fence->cbs[0].fence = fence;
-	if (fence_add_callback(&pt->base, &fence->cbs[0].cb,
-			       fence_check_cb_func))
+	cb->sync_pt = &pt->base;
+	cb->fence = fence;
+	if (fence_add_callback(&pt->base, &cb->cb, fence_check_cb_func))
 		atomic_dec(&fence->status);
 
 	sync_fence_debug_add(fence);
-
 	return fence;
 }
 EXPORT_SYMBOL(sync_fence_create);
@@ -242,71 +247,65 @@ void sync_fence_install(struct sync_fence *fence, int fd)
 }
 EXPORT_SYMBOL(sync_fence_install);
 
-static void sync_fence_add_pt(struct sync_fence *fence,
-			      int *i, struct fence *pt)
+static int sync_fence_add_pt(struct sync_fence *fence,
+			     struct sync_fence_cb ***tail, struct fence *pt)
 {
-	fence->cbs[*i].sync_pt = pt;
-	fence->cbs[*i].fence = fence;
+	struct sync_fence_cb *cb;
 
-	if (!fence_add_callback(pt, &fence->cbs[*i].cb, fence_check_cb_func)) {
-		fence_get(pt);
-		(*i)++;
-	}
+	cb = kmem_cache_zalloc(fence_cb_cache, GFP_KERNEL);
+	if (!cb)
+		return -ENOMEM;
+	cb->sync_pt = fence_get(pt);
+	cb->fence = fence;
+	**tail = cb;
+	*tail = &cb->next;
+	fence->num_fences++;
+
+	return fence_add_callback(pt, &cb->cb, fence_check_cb_func) ? 0 : 1;
 }
 
 struct sync_fence *sync_fence_merge(const char *name,
 				    struct sync_fence *a, struct sync_fence *b)
 {
 	int num_fences = a->num_fences + b->num_fences;
+	int ret, status = 0;
 	struct sync_fence *fence;
-	int i, i_a, i_b;
-	unsigned long size = offsetof(struct sync_fence, cbs[num_fences]);
+	struct sync_fence_cb *a_cb = a->cbs, *b_cb = b->cbs;
+	struct sync_fence_cb **tail;
 
-	fence = sync_fence_alloc(size, name);
-	if (fence == NULL)
+	fence = sync_fence_alloc(name);
+	if (!fence)
 		return NULL;
-
 	atomic_set(&fence->status, num_fences);
+	tail = &fence->cbs;
 
-	/*
-	 * Assume sync_fence a and b are both ordered and have no
-	 * duplicates with the same context.
-	 *
-	 * If a sync_fence can only be created with sync_fence_merge
-	 * and sync_fence_create, this is a reasonable assumption.
-	 */
-	for (i = i_a = i_b = 0; i_a < a->num_fences && i_b < b->num_fences; ) {
-		struct fence *pt_a = a->cbs[i_a].sync_pt;
-		struct fence *pt_b = b->cbs[i_b].sync_pt;
+	/* Keep the latest point per timeline in context order. */
+	while (a_cb || b_cb) {
+		struct fence *pt;
 
-		if (pt_a->context < pt_b->context) {
-			sync_fence_add_pt(fence, &i, pt_a);
-
-			i_a++;
-		} else if (pt_a->context > pt_b->context) {
-			sync_fence_add_pt(fence, &i, pt_b);
-
-			i_b++;
+		if (!b_cb ||
+		    (a_cb && a_cb->sync_pt->context < b_cb->sync_pt->context)) {
+			pt = a_cb->sync_pt;
+			a_cb = a_cb->next;
+		} else if (!a_cb ||
+			   a_cb->sync_pt->context > b_cb->sync_pt->context) {
+			pt = b_cb->sync_pt;
+			b_cb = b_cb->next;
 		} else {
-			if (pt_a->seqno - pt_b->seqno <= INT_MAX)
-				sync_fence_add_pt(fence, &i, pt_a);
-			else
-				sync_fence_add_pt(fence, &i, pt_b);
-
-			i_a++;
-			i_b++;
+			pt = a_cb->sync_pt->seqno - b_cb->sync_pt->seqno <=
+				INT_MAX ? a_cb->sync_pt : b_cb->sync_pt;
+			a_cb = a_cb->next;
+			b_cb = b_cb->next;
 		}
+		ret = sync_fence_add_pt(fence, &tail, pt);
+		if (ret < 0) {
+			fput(fence->file);
+			return NULL;
+		}
+		status += ret;
 	}
-
-	for (; i_a < a->num_fences; i_a++)
-		sync_fence_add_pt(fence, &i, a->cbs[i_a].sync_pt);
-
-	for (; i_b < b->num_fences; i_b++)
-		sync_fence_add_pt(fence, &i, b->cbs[i_b].sync_pt);
-
-	if (num_fences > i)
-		atomic_sub(num_fences - i, &fence->status);
-	fence->num_fences = i;
+	if (num_fences > status)
+		atomic_sub(num_fences - status, &fence->status);
 
 	sync_fence_debug_add(fence);
 	return fence;
@@ -372,7 +371,7 @@ EXPORT_SYMBOL(sync_fence_cancel_async);
 int sync_fence_wait(struct sync_fence *fence, long timeout)
 {
 	long ret;
-	int i;
+	struct sync_fence_cb *cb;
 
 	if (timeout < 0)
 		timeout = MAX_SCHEDULE_TIMEOUT;
@@ -380,8 +379,8 @@ int sync_fence_wait(struct sync_fence *fence, long timeout)
 		timeout = msecs_to_jiffies(timeout);
 
 	trace_sync_wait(fence, 1);
-	for (i = 0; i < fence->num_fences; ++i)
-		trace_sync_pt(fence->cbs[i].sync_pt);
+	for (cb = fence->cbs; cb; cb = cb->next)
+		trace_sync_pt(cb->sync_pt);
 	ret = wait_event_interruptible_timeout(fence->wq,
 					       atomic_read(&fence->status) <= 0,
 					       timeout);
@@ -532,13 +531,14 @@ static const struct fence_ops android_fence_ops = {
 static void sync_fence_free(struct kref *kref)
 {
 	struct sync_fence *fence = container_of(kref, struct sync_fence, kref);
-	int i;
+	struct sync_fence_cb *cb, *next;
 
-	for (i = 0; i < fence->num_fences; ++i) {
-		fence_remove_callback(fence->cbs[i].sync_pt, &fence->cbs[i].cb);
-		fence_put(fence->cbs[i].sync_pt);
+	for (cb = fence->cbs; cb; cb = next) {
+		next = cb->next;
+		fence_remove_callback(cb->sync_pt, &cb->cb);
+		fence_put(cb->sync_pt);
+		kmem_cache_free(fence_cb_cache, cb);
 	}
-
 	kfree(fence);
 }
 
@@ -665,7 +665,8 @@ static long sync_fence_ioctl_fence_info(struct sync_fence *fence,
 	struct sync_fence_info_data *data;
 	__u32 size;
 	__u32 len = 0;
-	int ret, i;
+	int ret;
+	struct sync_fence_cb *cb;
 
 	if (copy_from_user(&size, (void __user *)arg, sizeof(size)))
 		return -EFAULT;
@@ -687,8 +688,8 @@ static long sync_fence_ioctl_fence_info(struct sync_fence *fence,
 
 	len = sizeof(struct sync_fence_info_data);
 
-	for (i = 0; i < fence->num_fences; ++i) {
-		struct fence *pt = fence->cbs[i].sync_pt;
+	for (cb = fence->cbs; cb; cb = cb->next) {
+		struct fence *pt = cb->sync_pt;
 
 		ret = sync_fill_pt_info(pt, (u8 *)data + len, size - len);
 
@@ -738,3 +739,9 @@ static const struct file_operations sync_fence_fops = {
 	.compat_ioctl = sync_fence_ioctl,
 };
 
+static int __init sync_fence_init(void)
+{
+	fence_cb_cache = KMEM_CACHE(sync_fence_cb, SLAB_PANIC);
+	return 0;
+}
+core_initcall(sync_fence_init);

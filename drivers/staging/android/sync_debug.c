@@ -147,14 +147,14 @@ static void sync_print_fence(struct seq_file *s, struct sync_fence *fence)
 {
 	wait_queue_t *pos;
 	unsigned long flags;
-	int i;
+	struct sync_fence_cb *cb;
 
 	seq_printf(s, "[%pK] %s: %s\n", fence, fence->name,
 		   sync_status_str(atomic_read(&fence->status)));
 
-	for (i = 0; i < fence->num_fences; ++i) {
+	for (cb = fence->cbs; cb; cb = cb->next) {
 		struct sync_pt *pt =
-			container_of(fence->cbs[i].sync_pt,
+			container_of(cb->sync_pt,
 				     struct sync_pt, base);
 
 		sync_print_pt(s, pt, true);
