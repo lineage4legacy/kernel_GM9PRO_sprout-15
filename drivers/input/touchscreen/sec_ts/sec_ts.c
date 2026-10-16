@@ -330,6 +330,68 @@ static void secure_touch_stop(struct sec_ts_data *ts, bool stop)
 }
 #endif
 
+static ssize_t glove_mode_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct sec_ts_data *ts = dev_get_drvdata(dev);
+	bool enabled;
+
+	mutex_lock(&ts->device_mutex);
+	enabled = !!(ts->touch_functions & SEC_TS_BIT_SETFUNC_GLOVE);
+	mutex_unlock(&ts->device_mutex);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", enabled);
+}
+
+static ssize_t glove_mode_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sec_ts_data *ts = dev_get_drvdata(dev);
+	unsigned long mode;
+	u16 touch_functions;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &mode);
+	if (ret || mode > 1)
+		return -EINVAL;
+
+	mutex_lock(&ts->device_mutex);
+	touch_functions = ts->touch_functions;
+	if (mode)
+		touch_functions |= SEC_TS_BIT_SETFUNC_GLOVE;
+	else
+		touch_functions &= ~SEC_TS_BIT_SETFUNC_GLOVE;
+
+	if (touch_functions == ts->touch_functions)
+		goto out;
+
+	/* Keep the requested mode for the next start if the controller is off. */
+	if (ts->power_status == SEC_TS_STATE_POWER_ON) {
+		ret = sec_ts_i2c_write(ts, SEC_TS_CMD_SET_TOUCHFUNCTION,
+				(u8 *)&touch_functions, 2);
+		if (ret < 0)
+			goto out;
+	}
+
+	ts->touch_functions = touch_functions;
+	ret = 0;
+out:
+	mutex_unlock(&ts->device_mutex);
+	return ret < 0 ? ret : count;
+}
+
+static DEVICE_ATTR(glove_mode, (S_IRUGO | S_IWUSR | S_IWGRP),
+		glove_mode_show, glove_mode_store);
+
+static struct attribute *sec_ts_attrs[] = {
+	&dev_attr_glove_mode.attr,
+	NULL,
+};
+
+static struct attribute_group sec_ts_attr_group = {
+	.attrs = sec_ts_attrs,
+};
+
 int sec_ts_i2c_write(struct sec_ts_data *ts, u8 reg, u8 *data, int len)
 {
 	u8 buf[I2C_WRITE_BUFFER_SIZE + 1];
@@ -673,6 +735,26 @@ void sec_ts_reinit(struct sec_ts_data *ts)
 }
 
 #define MAX_EVENT_COUNT 32
+static void sec_ts_update_glove_switch(struct sec_ts_data *ts)
+{
+	bool glove_touch = false;
+	int i;
+
+	for (i = 0; i < MAX_SUPPORT_TOUCH_COUNT; i++) {
+		if ((ts->coord[i].action == SEC_TS_COORDINATE_ACTION_PRESS ||
+				ts->coord[i].action == SEC_TS_COORDINATE_ACTION_MOVE) &&
+				ts->coord[i].ttype == SEC_TS_TOUCHTYPE_GLOVE) {
+			glove_touch = true;
+			break;
+		}
+	}
+
+	if (ts->touchkey_glove_mode_status != glove_touch) {
+		ts->touchkey_glove_mode_status = glove_touch;
+		input_report_switch(ts->input_dev, SW_GLOVE, glove_touch);
+	}
+}
+
 static void sec_ts_read_event(struct sec_ts_data *ts)
 {
 	int ret;
@@ -856,14 +938,6 @@ static void sec_ts_read_event(struct sec_ts_data *ts)
 						if (ts->screen_off)
 							goto out;
 #endif
-						if ((ts->coord[t_id].ttype == SEC_TS_TOUCHTYPE_GLOVE) && !ts->touchkey_glove_mode_status) {
-							ts->touchkey_glove_mode_status = true;
-							input_report_switch(ts->input_dev, SW_GLOVE, 1);
-						} else {
-							ts->touchkey_glove_mode_status = false;
-							input_report_switch(ts->input_dev, SW_GLOVE, 0);
-						}
-
 						input_mt_slot(ts->input_dev, t_id);
 						input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 1);
 						input_report_key(ts->input_dev, BTN_TOUCH, 1);
@@ -885,6 +959,7 @@ static void sec_ts_read_event(struct sec_ts_data *ts)
 					input_dbg(true, &ts->client->dev,
 							"%s: do not support coordinate type(%d)\n", __func__, ts->coord[t_id].ttype);
 				}
+				sec_ts_update_glove_switch(ts);
 			} else {
 				input_err(true, &ts->client->dev, "%s: tid(%d) is out of range\n", __func__, t_id);
 			}
@@ -1393,6 +1468,10 @@ static int sec_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	else
 		secure_touch_init(ts);
 #endif
+	ret = sysfs_create_group(&ts->input_dev->dev.kobj, &sec_ts_attr_group);
+	if (ret < 0)
+		input_err(true, &ts->client->dev,
+				"%s: failed to create glove mode sysfs group\n", __func__);
 
 	device_init_wakeup(&client->dev, true);
 
