@@ -995,11 +995,16 @@ static irqreturn_t sec_ts_irq_thread(int irq, void *ptr)
 	}
 #endif
 
+	/* Limit CPU idle exit latency while processing touch I2C transfers. */
+	pm_qos_update_request(&ts->pm_qos_req, 100);
+
 	mutex_lock(&ts->eventlock);
 
 	sec_ts_read_event(ts);
 
 	mutex_unlock(&ts->eventlock);
+
+	pm_qos_update_request(&ts->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 
 	return IRQ_HANDLED;
 }
@@ -1450,6 +1455,9 @@ static int sec_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 
 	input_info(true, &ts->client->dev, "%s: request_irq = %d\n", __func__, client->irq);
 
+	pm_qos_add_request(&ts->pm_qos_req, PM_QOS_CPU_DMA_LATENCY,
+			PM_QOS_DEFAULT_VALUE);
+
 	ret = request_threaded_irq(client->irq, NULL, sec_ts_irq_thread,
 			ts->plat_data->irq_type, SEC_TS_I2C_NAME, ts);
 	if (ret < 0) {
@@ -1487,6 +1495,7 @@ static int sec_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	return 0;
 
 err_irq:
+	pm_qos_remove_request(&ts->pm_qos_req);
 err_input_register_device:
 	kfree(ts->pFrame);
 err_allocate_frame:
@@ -1632,6 +1641,7 @@ static int sec_ts_remove(struct i2c_client *client)
 
 	disable_irq_nosync(ts->client->irq);
 	free_irq(ts->client->irq, ts);
+	pm_qos_remove_request(&ts->pm_qos_req);
 	input_info(true, &ts->client->dev, "%s: irq disabled\n", __func__);
 
 	device_init_wakeup(&client->dev, false);
