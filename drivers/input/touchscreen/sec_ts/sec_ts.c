@@ -20,6 +20,7 @@ static void sec_ts_input_close(struct input_dev *dev);
 #endif
 
 int sec_ts_read_information(struct sec_ts_data *ts);
+int sec_ts_i2c_write(struct sec_ts_data *ts, u8 reg, u8 *data, int len);
 
 #ifdef CONFIG_SECURE_TOUCH
 static int sec_ts_change_pipe_owner(struct sec_ts_data *ts, enum subsystem subsystem)
