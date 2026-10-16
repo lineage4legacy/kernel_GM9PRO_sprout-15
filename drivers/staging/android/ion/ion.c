@@ -180,6 +180,13 @@ static void ion_buffer_add(struct ion_device *dev,
 }
 
 /* this function should only be called while dev->lock is held */
+struct ion_buffer_map {
+	struct sg_table table;
+	struct list_head list;
+	struct device *dev;
+	enum dma_data_direction direction;
+};
+
 static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 				     struct ion_device *dev,
 				     unsigned long len,
@@ -195,6 +202,8 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	if (!buffer)
 		return ERR_PTR(-ENOMEM);
 
+	INIT_LIST_HEAD(&buffer->map_freelist);
+	spin_lock_init(&buffer->map_freelist_lock);
 	buffer->heap = heap;
 	buffer->flags = flags;
 	kref_init(&buffer->ref);
@@ -278,6 +287,14 @@ err2:
 
 void ion_buffer_destroy(struct ion_buffer *buffer)
 {
+	struct ion_buffer_map *map, *tmp;
+
+	list_for_each_entry_safe(map, tmp, &buffer->map_freelist, list) {
+		sg_free_table(&map->table);
+		put_device(map->dev);
+		kfree(map);
+	}
+
 	if (WARN_ON(buffer->kmap_cnt > 0))
 		buffer->heap->ops->unmap_kernel(buffer->heap, buffer);
 	buffer->heap->ops->unmap_dma(buffer->heap, buffer);
@@ -1164,22 +1181,43 @@ err0:
 	return ERR_PTR(ret);
 }
 
-static struct sg_table *ion_dupe_sg_table(struct sg_table *orig_table)
+static struct sg_table *ion_dupe_sg_table(struct ion_buffer *buffer,
+					  struct device *dev,
+					  enum dma_data_direction direction)
 {
-	int ret, i;
+	struct sg_table *orig_table = buffer->sg_table;
+	struct ion_buffer_map *map, *cached = NULL;
 	struct scatterlist *sg, *sg_orig;
 	struct sg_table *table;
+	int i, ret;
 
-	table = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (!table)
-		return NULL;
+	spin_lock(&buffer->map_freelist_lock);
+	list_for_each_entry(map, &buffer->map_freelist, list) {
+		if (map->dev == dev && map->direction == direction) {
+			list_del(&map->list);
+			cached = map;
+			break;
+		}
+	}
+	spin_unlock(&buffer->map_freelist_lock);
 
-	ret = sg_alloc_table(table, orig_table->nents, GFP_KERNEL);
-	if (ret) {
-		kfree(table);
-		return NULL;
+	if (!cached) {
+		cached = kzalloc(sizeof(*cached), GFP_KERNEL);
+		if (!cached)
+			return NULL;
+		ret = sg_alloc_table(&cached->table, orig_table->nents,
+				     GFP_KERNEL);
+		if (ret) {
+			kfree(cached);
+			return NULL;
+		}
+		cached->dev = get_device(dev);
+		cached->direction = direction;
 	}
 
+	/* Restore the original scatterlist after any previous DMA mapping. */
+	table = &cached->table;
+	table->nents = orig_table->nents;
 	sg_orig = orig_table->sgl;
 	for_each_sg(table->sgl, sg, table->nents, i) {
 		memcpy(sg, sg_orig, sizeof(*sg));
@@ -1199,7 +1237,7 @@ static struct sg_table *ion_map_dma_buf(struct dma_buf_attachment *attachment,
 	struct ion_buffer *buffer = dmabuf->priv;
 	struct sg_table *table;
 
-	table = ion_dupe_sg_table(buffer->sg_table);
+	table = ion_dupe_sg_table(buffer, attachment->dev, direction);
 	if (!table)
 		return NULL;
 
@@ -1211,8 +1249,13 @@ static void ion_unmap_dma_buf(struct dma_buf_attachment *attachment,
 			      struct sg_table *table,
 			      enum dma_data_direction direction)
 {
-	sg_free_table(table);
-	kfree(table);
+	struct ion_buffer *buffer = attachment->dmabuf->priv;
+	struct ion_buffer_map *map = container_of(table,
+						 struct ion_buffer_map, table);
+
+	spin_lock(&buffer->map_freelist_lock);
+	list_add(&map->list, &buffer->map_freelist);
+	spin_unlock(&buffer->map_freelist_lock);
 }
 
 void ion_pages_sync_for_device(struct device *dev, struct page *page,

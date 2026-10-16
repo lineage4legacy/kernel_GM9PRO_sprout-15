@@ -88,6 +88,9 @@ struct ion_buffer {
 	int kmap_cnt;
 	void *vaddr;
 	struct sg_table *sg_table;
+	struct list_head map_freelist;
+	/* Protects the cache of unmapped DMA scatterlist copies. */
+	spinlock_t map_freelist_lock;
 	struct page **pages;
 	struct list_head vmas;
 	/* used to track orphaned buffers */
